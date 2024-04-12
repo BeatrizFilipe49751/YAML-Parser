@@ -1,11 +1,12 @@
 package pt.isel
 
 import kotlin.reflect.KClass
+import kotlin.reflect.KParameter
 
 /**
  * A YamlParser that uses reflection to parse objects.
  */
-class YamlParserReflect<T : Any>(type: KClass<T>) : AbstractYamlParser<T>(type) {
+class YamlParserReflect<T : Any>(private val type: KClass<T>) : AbstractYamlParser<T>(type) {
     companion object {
         /**
          *Internal cache of YamlParserReflect instances.
@@ -28,6 +29,51 @@ class YamlParserReflect<T : Any>(type: KClass<T>) : AbstractYamlParser<T>(type) 
      * that has all the mandatory parameters in the map and optional parameters for the rest.
      */
     override fun newInstance(args: Map<String, Any>): T {
-        TODO("Not yet implemented")
+        val constructor = type.constructors.first()
+        val argsMap = mutableMapOf<KParameter, Any?>()
+
+        for (param in constructor.parameters) {
+            val value = args[param.name]
+            if (value == null && !param.isOptional && !param.type.isMarkedNullable) {
+                throw IllegalArgumentException("Missing properties for ${type.simpleName}")
+            }
+            argsMap[param] = parseParameterValue(param, value)
+        }
+
+        return constructor.callBy(argsMap)
     }
+
+    private fun parseParameterValue(param: KParameter, value: Any?): Any? {
+        return when (value) {
+            is Map<*, *> -> {
+                val nestedClass = param.type.classifier as? KClass<*>
+                if (nestedClass != null) {
+                    yamlParser(nestedClass).newInstance(value as Map<String, Any>)
+                } else {
+                    value
+                }
+            }
+
+            is List<*> -> {
+                val nestedClass = param.type.arguments.first().type!!.classifier as? KClass<*>
+                if (nestedClass != null) {
+                    value.map { yamlParser(nestedClass).newInstance(it as Map<String, Any>) }
+                } else {
+                    value
+                }
+            }
+
+            else -> {
+                when (param.type.classifier) {
+                    Int::class -> value.toString().toInt()
+                    Long::class -> value.toString().toLong()
+                    Double::class -> value.toString().toDouble()
+                    Float::class -> value.toString().toFloat()
+                    List::class -> value ?: emptyList<Any>()
+                    else -> value
+                }
+            }
+        }
+    }
+
 }

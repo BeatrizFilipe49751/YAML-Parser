@@ -45,6 +45,40 @@ class YamlParserReflectTest {
         assertEquals("Lisbon", st.address?.city)
     }
 
+    @Test
+    fun parseStudentWithGrades() {
+        val yaml = """
+                name: Maria Candida
+                nr: 873435
+                from: Oleiros
+                grades:
+                  - 
+                    subject: LAE
+                    classification: 18
+                  -
+                    subject: PDM
+                    classification: 15
+                  -
+                    subject: PC
+                    classification: 19
+                """
+        val st = YamlParserReflect.yamlParser(Student::class).parseObject(yaml.reader())
+        assertEquals("Maria Candida", st.name)
+        assertEquals(873435, st.nr)
+        assertEquals("Oleiros", st.from)
+        val grades = st.grades.iterator()
+        val g1 = grades.next()
+        assertEquals("LAE", g1.subject)
+        assertEquals(18, g1.classification)
+        val g2 = grades.next()
+        assertEquals("PDM", g2.subject)
+        assertEquals(15, g2.classification)
+        val g3 = grades.next()
+        assertEquals("PC", g3.subject)
+        assertEquals(19, g3.classification)
+        assertFalse { grades.hasNext() }
+    }
+
     @Test fun parseSequenceOfStrings() {
         val yaml = """
             - Ola

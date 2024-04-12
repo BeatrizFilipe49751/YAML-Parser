@@ -14,13 +14,191 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
      */
     abstract fun newInstance(args: Map<String, Any>): T
 
-
     final override fun parseObject(yaml: Reader): T {
-        TODO("Not yet implemented")
+        val data = yaml.readText()
+        val lines = data.lines()
+        val args = mutableMapOf<String, Any>()
+
+        val obj = mutableListOf<String>()
+        var lastIndentation : Int? = null
+        var lastKey : String? = null
+
+        for (line in lines) {
+            if (line.isBlank()) {
+                continue
+            }
+
+            val indentation = line.takeWhile { it == ' ' }.length
+
+            if (lastIndentation == null) {
+                lastIndentation = indentation
+            }
+
+                if (indentation > lastIndentation) {
+                    obj.add(line)
+                } else {
+                    if (obj.isNotEmpty()) {
+                        val res = parseBlock(obj, lastKey)
+                        args[lastKey!!] = res.getOrDefault(lastKey, res)
+                        obj.clear()
+                    }
+                        val parts = line.split(":")
+                        if (parts.size == 2) {
+                            val key = parts[0].trim()
+                            val value = parts[1].trim()
+                            args[key] = value
+                            lastKey = key
+                            lastIndentation = indentation
+                        } else if (line.isNotBlank()) {
+                            throw IllegalArgumentException("Missing properties for ${type.simpleName}")
+                        }
+                }
+            }
+
+        if (obj.isNotEmpty()) {
+            val res = parseBlock(obj, lastKey)
+            args[lastKey!!] = res.getOrDefault(lastKey, res)
+        }
+
+        return newInstance(args)
     }
 
     final override fun parseList(yaml: Reader): List<T> {
-        TODO("Not yet implemented")
+        val data = yaml.readText()
+        val result = mutableListOf<T>()
+
+        val obj = mutableListOf<String>()
+        var lastIndentation : Int? = null
+
+        val simpleType = type.isSimpleType()
+
+        val lines = if (simpleType) {
+            data.split("-").filter { it.isNotBlank() }
+        } else {
+            data.lines().filter { it.isNotBlank() }
+        }
+
+            for (line in lines) {
+                if (simpleType) {
+                    result.add(parseSimpleValue(line.trim(), type) as T)
+                    continue
+                }
+
+                val indentation = line.takeWhile { it == ' ' }.length
+
+                if (lastIndentation == null) {
+                    lastIndentation = indentation
+                } else if (line.trim().startsWith('-')) {
+                    if (indentation > lastIndentation) {
+                        obj.add(line)
+                    } else {
+                        result.add(parseObject(obj.joinToString("\n").reader()))
+                        obj.clear()
+                    }
+                } else {
+                    obj.add(line)
+                }
+            }
+
+            if (obj.isNotEmpty()) {
+                result.add(parseObject(obj.joinToString("\n").reader()))
+            }
+
+        return result
+    }
+
+    private fun parseBlock(lines : List<String>, parent : String?) : Map<String, Any> {
+        val args = mutableMapOf<String, Any>()
+        var lastIndentation : Int? = null
+        var lastKey : String? = null
+        val obj = mutableListOf<String>()
+
+        val list = mutableListOf<Map<String, Any>>()
+        var isList = false
+        var parentValue : String? = null
+
+        for (line in lines) {
+            val indentation = line.takeWhile { it == ' ' }.length
+
+            if (line.trim().startsWith('-')) {
+                if (!isList) {
+                    lastIndentation = indentation
+                    isList = true
+                } else {
+                    if (indentation == lastIndentation) {
+                        list.add(parseBlock(obj, parentValue))
+                        obj.clear()
+                    } else {
+                        if (parentValue == null) {
+                            parentValue = obj.last().toString().removeSuffix(":").trim()
+                        }
+                        obj.add(line)
+                    }
+                }
+                continue
+            }
+
+            val parts = line.split(":")
+
+            if (parts.size == 2) {
+                val key = parts[0].trim()
+                val value = parts[1].trim()
+
+                if (lastIndentation == null) {
+                    lastIndentation = indentation
+                }
+
+                if (indentation > lastIndentation) {
+                    obj.add(line)
+                } else {
+                    if (obj.isNotEmpty()) {
+                        if (isList) {
+                            list.add(parseBlock(obj, parentValue))
+                            obj.clear()
+                            isList = false
+                        } else {
+                            args[lastKey!!] = parseBlock(obj, parentValue)
+                            obj.clear()
+                        }
+                    }
+                    args[key] = value
+                    lastKey = key
+                    lastIndentation = indentation
+                }
+
+            } else if (line.isNotBlank()) {
+                throw IllegalArgumentException("Missing properties for ${type.simpleName}")
+            }
+        }
+
+        if (obj.isNotEmpty()) {
+            if (isList) {
+                list.add(parseBlock(obj, parentValue))
+            } else {
+                args[lastKey!!] = parseBlock(obj, parentValue)
+            }
+        }
+
+        if (list.isNotEmpty()) {
+            args[parent!!] = list
+        }
+
+        return args
+    }
+
+    private fun KClass<*>.isSimpleType() = this in setOf(String::class, Int::class, Long::class,
+        Double::class, Float::class)
+
+    private fun parseSimpleValue(value:String, classType:KClass<*>): Any {
+        return when (classType) {
+            String::class -> value
+            Int::class -> value.toInt()
+            Long::class -> value.toLong()
+            Double::class -> value.toDouble()
+            Float::class -> value.toFloat()
+            List::class -> emptyList<Any>()
+            else -> value
+        }
     }
 
 }
