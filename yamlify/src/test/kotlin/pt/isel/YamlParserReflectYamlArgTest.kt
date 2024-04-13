@@ -5,7 +5,7 @@ import pt.isel.test.Person
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class YamlParserReflectAnnotationTest {
+class YamlParserReflectYamlArgTest {
 
     @Test fun parsePersonWithMissingProperties() {
         val yaml = """

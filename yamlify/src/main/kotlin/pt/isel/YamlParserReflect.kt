@@ -2,6 +2,7 @@ package pt.isel
 
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
+import kotlin.reflect.full.createInstance
 import kotlin.reflect.full.findAnnotation
 
 /**
@@ -67,15 +68,21 @@ class YamlParserReflect<T : Any>(private val type: KClass<T>) : AbstractYamlPars
             }
 
             else -> {
-                when (param.type.classifier) {
-                    Int::class -> value.toString().toInt()
-                    Long::class -> value.toString().toLong()
-                    Double::class -> value.toString().toDouble()
-                    Float::class -> value.toString().toFloat()
-                    Short::class -> value.toString().toShort()
-                    Boolean::class -> value.toString().toBoolean()
-                    List::class -> value ?: emptyList<Any>()
-                    else -> value
+                val customParserAnnotation = param.findAnnotation<YamlConvert>()
+                if (customParserAnnotation != null) {
+                    val customParser = customParserAnnotation.parser.createInstance()
+                    customParser.parse(value.toString())
+                } else {
+                    when (param.type.classifier) {
+                        Int::class -> value.toString().toInt()
+                        Long::class -> value.toString().toLong()
+                        Double::class -> value.toString().toDouble()
+                        Float::class -> value.toString().toFloat()
+                        Short::class -> value.toString().toShort()
+                        Boolean::class -> value.toString().toBoolean()
+                        List::class -> value ?: emptyList<Any>()
+                        else -> value
+                    }
                 }
             }
         }
