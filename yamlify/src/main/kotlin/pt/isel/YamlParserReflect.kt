@@ -2,6 +2,7 @@ package pt.isel
 
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
+import kotlin.reflect.full.findAnnotation
 
 /**
  * A YamlParser that uses reflection to parse objects.
@@ -33,7 +34,9 @@ class YamlParserReflect<T : Any>(private val type: KClass<T>) : AbstractYamlPars
         val argsMap = mutableMapOf<KParameter, Any?>()
 
         for (param in constructor.parameters) {
-            val value = args[param.name]
+            val yamlArg = param.findAnnotation<YamlArg>()
+            val argName = yamlArg?.name ?: param.name
+            val value = args[argName]
             if (value == null && !param.isOptional && !param.type.isMarkedNullable) {
                 throw IllegalArgumentException("Missing properties for ${type.simpleName}")
             }
@@ -69,6 +72,8 @@ class YamlParserReflect<T : Any>(private val type: KClass<T>) : AbstractYamlPars
                     Long::class -> value.toString().toLong()
                     Double::class -> value.toString().toDouble()
                     Float::class -> value.toString().toFloat()
+                    Short::class -> value.toString().toShort()
+                    Boolean::class -> value.toString().toBoolean()
                     List::class -> value ?: emptyList<Any>()
                     else -> value
                 }
