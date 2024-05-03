@@ -117,14 +117,6 @@ open class YamlParserCojen<T : Any>(
                 .invoke("parseBoolean", value.cast(String::class.java))
 
             List::class.java -> {
-                val nestedClass = (param.parameterizedType as ParameterizedType).actualTypeArguments[0] as Class<*>
-                val listSize = newInstance.`var`(param.type.cast(List::class.java))
-                    .invoke("size")
-                val idx = newInstance.`var`(Integer::class.java).invoke("valueOf", 0)
-
-                val label = newInstance.label()
-                val goto = newInstance.goto_(label)
-
                 // TODO
                 value
                 /*val list = value.cast(List::class.java) as List<Map<String, Any>>
