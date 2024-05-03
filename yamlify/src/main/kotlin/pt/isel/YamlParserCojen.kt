@@ -1,11 +1,11 @@
 package pt.isel
 
 import org.cojen.maker.ClassMaker
-import org.cojen.maker.FieldMaker
 import org.cojen.maker.MethodMaker
 import org.cojen.maker.Variable
+import java.lang.reflect.Constructor
 import java.lang.reflect.Parameter
-import java.util.Objects
+import java.lang.reflect.ParameterizedType
 import kotlin.reflect.KClass
 /**
  * A YamlParser that uses Cojen Maker to generate a parser.
@@ -51,49 +51,63 @@ open class YamlParserCojen<T : Any>(
     }
 
     private fun buildYamlParser() : ClassMaker {
-        val cm = ClassMaker
-            .begin()
-            .extend(YamlParserCojen::class.java)
-            .public_()
+        val cm = ClassMaker.begin(parserName(type, nrOfInitArgs)).extend(YamlParserCojen::class.java).public_()
+        println("ClassMaker created for class: ${parserName(type, nrOfInitArgs)}")
 
-        val init = cm.addConstructor(KClass::class.java, Integer::class.java).public_()
+        // Generate Constructor
+        val init: MethodMaker = cm.addConstructor(KClass::class.java, Integer::class.java).public_()
         init.invokeSuperConstructor(init.param(0), init.param(1))
 
-        val newInstance = cm
-            .addMethod(Object::class.java, "newInstance", Map::class.java)
+        val newInstance = cm.addMethod(Any::class.java, "newInstance", Map::class.java)
 
-        val argsVar = newInstance.param(0)
+        // Generate newInstance
+        val constructor: Constructor<*> = type.java.constructors.first { it.parameters.size == nrOfInitArgs }
+        val params = constructor.parameters.map {
+            println("Processing parameter: ${it.name} of type: ${it.type}")
+            getValueForParameter(it, newInstance)
+        }.toTypedArray()
 
-        val name = argsVar.invoke("get", "name").cast(String::class.java)
-        val nrStr = argsVar.invoke("get", "nr").cast(String::class.java)
-        val nr = newInstance.`var`(Integer::class.java).invoke("parseInt", nrStr)
-        val from = argsVar.invoke("get", "from").cast(String::class.java)
+        newInstance.return_(newInstance.new_(type.java, *params))
 
-        val student = newInstance.new_(type.java, name, nr, from)
-        newInstance.return_(student)
         return cm
     }
+
+    private fun getValueForParameter(param: Parameter, newInstance: MethodMaker): Variable {
+        val value = newInstance.param(0).invoke("get", param.name)
+        return when (param.type) {
+            String::class.java -> {
+                value.cast(String::class.java)
+            }
+            Int::class.java -> {
+                newInstance.`var`(Integer::class.java)
+                    .invoke("parseInt", value.cast(String::class.java))
+            }
+            Long::class.java -> newInstance.`var`(Long::class.java)
+                .invoke("parseLong", value.cast(String::class.java))
+            Double::class.java -> newInstance.`var`(Double::class.java)
+                .invoke("parseDouble", value.cast(String::class.java))
+            Float::class.java -> newInstance.`var`(Float::class.java)
+                .invoke("parseFloat", value.cast(String::class.java))
+            Short::class.java -> newInstance.`var`(Short::class.java)
+                .invoke("parseShort", value.cast(String::class.java))
+            Boolean::class.java -> newInstance.`var`(Boolean::class.java)
+                .invoke("parseBoolean", value.cast(String::class.java))
+            List::class.java -> {
+                val nestedClass = (param.parameterizedType as ParameterizedType).actualTypeArguments[0] as Class<*>
+                // TODO
+                value
+                /*val list = value.cast(List::class.java) as List<Map<String, Any>>
+                val listVar = newInstance.new_(ArrayList::class.java)
+                list.forEach {
+                    listVar.invoke("add", yamlParser(nestedClass.kotlin).newInstance(it))
+                }
+                listVar*/
+            }
+            else -> {
+                // TODO
+                value
+            }
+        }
+    }
+
 }
-
-
-/*
-val fieldYamlParsers = cm
-    .addField(MutableMap::class.java, "yamlParsers")
-    .static_()
-    .private_()
-*/
-/*
-        val companionParserName = cm
-            .addMethod(String::class.java, "parserName" ,KClass::class.java, Int::class.java)
-        companionParserName.return_()
-
-        val companionYamlParser = cm
-            .addMethod(AbstractYamlParser::class.java, "yamlParser", KClass::class.java, Int::class.java)
-            .static_()
-            .public_()
-        companionYamlParser.return_()
-
-        val yamlParser = cm
-            .addMethod(AbstractYamlParser::class.java, "yamlParser", KClass::class.java)
-        yamlParser.return_()
-*/
