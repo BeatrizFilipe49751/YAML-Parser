@@ -1,6 +1,7 @@
 package pt.isel
 
 import org.cojen.maker.ClassMaker
+import org.cojen.maker.Label
 import org.cojen.maker.MethodMaker
 import org.cojen.maker.Variable
 import java.lang.reflect.Constructor
@@ -87,8 +88,9 @@ open class YamlParserCojen<T : Any>(
     }
 
 
-    private fun getValueForParameter(param: Parameter, newInstance: MethodMaker): Variable {
-        val value = newInstance.param(0).invoke("get", param.name)
+    private fun getValueForParameter(param: Parameter, newInstance: MethodMaker, map :Variable? = null): Variable {
+        val value = if (map != null) map.cast(Map::class.java).invoke("get", param.name)
+            else newInstance.param(0).invoke("get", param.name)
         return when (param.type) {
             String::class.java -> {
                 value.cast(String::class.java)
@@ -116,6 +118,13 @@ open class YamlParserCojen<T : Any>(
 
             List::class.java -> {
                 val nestedClass = (param.parameterizedType as ParameterizedType).actualTypeArguments[0] as Class<*>
+                val listSize = newInstance.`var`(param.type.cast(List::class.java))
+                    .invoke("size")
+                val idx = newInstance.`var`(Integer::class.java).invoke("valueOf", 0)
+
+                val label = newInstance.label()
+                val goto = newInstance.goto_(label)
+
                 // TODO
                 value
                 /*val list = value.cast(List::class.java) as List<Map<String, Any>>
@@ -128,7 +137,11 @@ open class YamlParserCojen<T : Any>(
 
             else -> {
                 // TODO
-                value
+                val constructor = param.type.constructors.first()
+                val args = constructor.parameters.map {
+                    getValueForParameter(it, newInstance, value)
+                }.toTypedArray()
+                newInstance.new_(param.type, *args)
             }
         }
     }
