@@ -1,9 +1,11 @@
 package pt.isel
 
 import org.cojen.maker.ClassMaker
+import org.cojen.maker.FieldMaker
 import org.cojen.maker.MethodMaker
 import org.cojen.maker.Variable
 import java.lang.reflect.Parameter
+import java.util.Objects
 import kotlin.reflect.KClass
 /**
  * A YamlParser that uses Cojen Maker to generate a parser.
@@ -19,24 +21,27 @@ open class YamlParserCojen<T : Any>(
         private fun parserName(type: KClass<*>, nrOfInitArgs: Int): String {
             return "YamlParser${type.simpleName}$nrOfInitArgs"
         }
+
         /**
          * Creates a YamlParser for the given type using Cojen Maker if it does not already exist.
          * Keep it in an internal cache.
          */
         fun <T : Any> yamlParser(type: KClass<T>, nrOfInitArgs: Int = type.constructors.first().parameters.size): AbstractYamlParser<T> {
             return yamlParsers.getOrPut(parserName(type, nrOfInitArgs)) {
-                YamlParserCojen(type, nrOfInitArgs)
+                val a = YamlParserCojen(type, nrOfInitArgs)
                     .buildYamlParser()
                     .finish()
-                    .getConstructor(KClass::class.java, Integer::class.java)
+                a.getConstructor(KClass::class.java, Integer::class.java)
                     .newInstance(type, nrOfInitArgs) as YamlParserCojen<*>
+
             } as YamlParserCojen<T>
         }
     }
     /**
      * Used to get a parser for other Type using the same parsing approach.
      */
-    override fun <T : Any> yamlParser(type: KClass<T>) = YamlParserCojen.yamlParser(type)
+    override fun <T : Any> yamlParser(type: KClass<T>) =
+        YamlParserCojen.yamlParser(type)
 
     /**
      * Do not change this method in YamlParserCojen.
@@ -46,7 +51,49 @@ open class YamlParserCojen<T : Any>(
     }
 
     private fun buildYamlParser() : ClassMaker {
-        TODO()
+        val cm = ClassMaker
+            .begin()
+            .extend(YamlParserCojen::class.java)
+            .public_()
+
+        val init = cm.addConstructor(KClass::class.java, Integer::class.java).public_()
+        init.invokeSuperConstructor(init.param(0), init.param(1))
+
+        val newInstance = cm
+            .addMethod(Object::class.java, "newInstance", Map::class.java)
+
+        val argsVar = newInstance.param(0)
+
+        val name = argsVar.invoke("get", "name").cast(String::class.java)
+        val nrStr = argsVar.invoke("get", "nr").cast(String::class.java)
+        val nr = newInstance.`var`(Integer::class.java).invoke("parseInt", nrStr)
+        val from = argsVar.invoke("get", "from").cast(String::class.java)
+
+        val student = newInstance.new_(type.java, name, nr, from)
+        newInstance.return_(student)
+        return cm
     }
 }
 
+
+/*
+val fieldYamlParsers = cm
+    .addField(MutableMap::class.java, "yamlParsers")
+    .static_()
+    .private_()
+*/
+/*
+        val companionParserName = cm
+            .addMethod(String::class.java, "parserName" ,KClass::class.java, Int::class.java)
+        companionParserName.return_()
+
+        val companionYamlParser = cm
+            .addMethod(AbstractYamlParser::class.java, "yamlParser", KClass::class.java, Int::class.java)
+            .static_()
+            .public_()
+        companionYamlParser.return_()
+
+        val yamlParser = cm
+            .addMethod(AbstractYamlParser::class.java, "yamlParser", KClass::class.java)
+        yamlParser.return_()
+*/
