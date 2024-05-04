@@ -1,7 +1,6 @@
 package pt.isel
 
 import org.cojen.maker.ClassMaker
-import org.cojen.maker.Label
 import org.cojen.maker.MethodMaker
 import org.cojen.maker.Variable
 import java.lang.reflect.Constructor
@@ -63,17 +62,10 @@ open class YamlParserCojen<T : Any>(
 
         val newInstance = cm.addMethod(Any::class.java, "newInstance", Map::class.java)
 
-        println("type.java.constructor content: ")
-        println("Content: ${type.java.constructors}, Number of constructors: ${type.java.constructors.size}")
-        type.java.constructors.forEach {
-            println("Constructor: ${it.name} with ${it.parameters.size} parameters")
-        }
-
-
         // Generate newInstance
         val constructor: Constructor<*> = getPrimitiveConstructor(type)
         val params = constructor.parameters.map {
-            println("Processing parameter: ${it.name} of type: ${it.type}")
+            //println("Processing parameter: ${it.name} of type: ${it.type}")
             getValueForParameter(it, newInstance)
         }.toTypedArray()
 
@@ -89,14 +81,18 @@ open class YamlParserCojen<T : Any>(
 
 
     private fun getValueForParameter(param: Parameter, newInstance: MethodMaker, map :Variable? = null): Variable {
-        val value = if (map != null) map.cast(Map::class.java).invoke("get", param.name)
-            else newInstance.param(0).invoke("get", param.name)
+        val annot = param.isAnnotationPresent(YamlArg::class.java)
+        val name = if (annot) param.getAnnotation(YamlArg::class.java).name else param.name
+        val value = if (map != null) map.cast(Map::class.java).invoke("get", name)
+            else newInstance.param(0).invoke("get", name)
         return when (param.type) {
             String::class.java -> {
+                println("Processing String parameter: ${param.name}")
                 value.cast(String::class.java)
             }
 
             Int::class.java -> {
+                println("Processing Int parameter: ${param.name}")
                 newInstance.`var`(Integer::class.java)
                     .invoke("parseInt", value.cast(String::class.java))
             }
@@ -117,18 +113,27 @@ open class YamlParserCojen<T : Any>(
                 .invoke("parseBoolean", value.cast(String::class.java))
 
             List::class.java -> {
-                // TODO
-                value
-                /*val list = value.cast(List::class.java) as List<Map<String, Any>>
-                val listVar = newInstance.new_(ArrayList::class.java)
-                list.forEach {
-                    listVar.invoke("add", yamlParser(nestedClass.kotlin).newInstance(it))
-                }
-                listVar*/
-            }
+                val list = value.cast(List::class.java)
+                val innerType = (param.parameterizedType as ParameterizedType).actualTypeArguments[0] as Class<*>
+                val constructor = innerType.constructors.first()
 
+                val listResult = newInstance.new_(ArrayList::class.java)
+
+                // should be a loop with list.size
+                for (i in 0 until 3) {
+                    val a = list.invoke("get", i).cast(Map::class.java)
+                    val innerParams = constructor.parameters.map {
+                                getValueForParameter(it, newInstance, a)
+                    }.toTypedArray()
+
+                    val res = newInstance.new_(innerType, *innerParams)
+
+                    listResult.invoke("add", res)
+                }
+
+                listResult.cast(List::class.java)
+            }
             else -> {
-                // TODO
                 val constructor = param.type.constructors.first()
                 val args = constructor.parameters.map {
                     getValueForParameter(it, newInstance, value)
