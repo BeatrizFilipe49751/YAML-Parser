@@ -202,4 +202,77 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
         }
     }
 
+    final override fun parseSequence(yaml: Reader): Sequence<T> {
+        return object : Sequence<T> {
+            override fun iterator() = object : Iterator<T> {
+                var lastIndentation: Int? = null
+                val lines = mutableListOf<List<String>>()
+                var elem = 0
+                val simpleType = type.isSimpleType()
+
+                init {
+                    divideLines()
+                    if (lastIndentation == null && !simpleType) {
+                        throw IllegalArgumentException("YAML content is not a list")
+                    }
+                }
+
+                override fun hasNext() = lines.size > elem
+
+                override fun next(): T {
+                    if (!hasNext()) {
+                        throw NoSuchElementException()
+                    }
+                    val item = processNext(lines[elem])
+                    elem++
+                    return item
+                }
+
+                private fun divideLines() {
+                    val reader = BufferedReader(yaml)
+                    if (simpleType) {
+                        val data = reader.readText()
+                        val lines = data.split("-").map { it.trim() }.filter { it.isNotBlank() }
+                        this.lines.addAll(lines.map { listOf(it) })
+                        return
+                    } else {
+                        val obj = mutableListOf<String>()
+                        reader.forEachLine { line ->
+                            if (line.isBlank()) {
+                                return@forEachLine
+                            }
+
+                            val indentation = line.takeWhile { it == ' ' }.length
+
+                            if (line.trim().startsWith('-')) {
+                                if (lastIndentation == null) {
+                                    lastIndentation = indentation
+                                    return@forEachLine
+                                } else if (indentation == lastIndentation) {
+                                    lines.add(obj.toList())
+                                    obj.clear()
+                                    return@forEachLine
+                                }
+                            }
+
+                            obj.add(line)
+                        }
+
+                        if (obj.isNotEmpty()) {
+                            lines.add(obj.toList())
+                        }
+                    }
+                }
+
+                private fun processNext(line: List<String>): T {
+                    return if (simpleType) {
+                        parseSimpleValue(line[0], type) as T
+                    } else {
+                        parseObject(line.joinToString("\n").reader())
+                    }
+                }
+            }
+        }
+    }
+
 }
