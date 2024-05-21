@@ -16,11 +16,17 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
     abstract fun newInstance(args: Map<String, Any>): T
 
     final override fun parseObject(yaml: Reader): T {
+        val parser = objectParser(yaml)
+        return newInstance(parser)
+    }
+    private fun objectParser(yaml: Reader) :Map<String, Any> {
         BufferedReader(yaml).use { reader ->
             val args = mutableMapOf<String, Any>()
-            val obj = mutableListOf<String>()
-            var lastIndentation: Int? = null
             var lastKey: String? = null
+
+            var isList = false
+            var lastIndentation: Int? = null
+            val objLines = mutableListOf<String>()
 
             reader.forEachLine { line ->
                 if (line.isBlank()) {
@@ -34,13 +40,15 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
                 }
 
                 if (indentation > lastIndentation!!) {
-                    obj.add(line)
+                    if (line.trim().startsWith("-") && objLines.isEmpty()) isList = true
+                    objLines.add(line)
                 } else {
-                    if (obj.isNotEmpty()) {
-                        val res = parseBlock(obj, lastKey)
-                        args[lastKey!!] = res.getOrDefault(lastKey, res)
-                        obj.clear()
+                    if (objLines.isNotEmpty()) {
+                        val r = objLines.joinToString("\n").reader()
+                        args[lastKey!!] = if (isList) listParser(r) else objectParser(r)
+                        objLines.clear()
                     }
+                    isList = false
                     val parts = line.split(":")
                     if (parts.size == 2) {
                         val key = parts[0].trim()
@@ -54,24 +62,23 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
                 }
             }
 
-            if (obj.isNotEmpty()) {
-                val res = parseBlock(obj, lastKey)
-                args[lastKey!!] = res.getOrDefault(lastKey, res)
+            if (objLines.isNotEmpty()) {
+                val r = objLines.joinToString("\n").reader()
+                args[lastKey!!] = if (isList) listParser(r) else objectParser(r)
             }
 
-            return newInstance(args)
+            return args
         }
     }
-
-    final override fun parseList(yaml: Reader): List<T> {
+    private fun listParser(yaml: Reader) :List<Any> {
         BufferedReader(yaml).use { reader ->
-            val result = mutableListOf<T>()
+            val result = mutableListOf<Any>()
             val simpleType = type.isSimpleType()
 
             if (simpleType) {
                 val data = reader.readText()
                 val lines = data.split("-").map { it.trim() }.filter { it.isNotBlank() }
-                result.addAll(lines.map { parseSimpleValue(it, type) as T })
+                result.addAll(lines)
             } else {
                 val obj = mutableListOf<String>()
                 var lastIndentation: Int? = null
@@ -89,7 +96,7 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
                         if (indentation > lastIndentation!!) {
                             obj.add(line)
                         } else {
-                            result.add(parseObject(obj.joinToString("\n").reader()))
+                            result.add(objectParser(obj.joinToString("\n").reader()))
                             obj.clear()
                         }
                     } else {
@@ -98,91 +105,19 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
                 }
 
                 if (obj.isNotEmpty()) {
-                    result.add(parseObject(obj.joinToString("\n").reader()))
+                    result.add(objectParser(obj.joinToString("\n").reader()))
                 }
             }
-
             return result
         }
     }
 
-    private fun parseBlock(lines : List<String>, parent : String?) : Map<String, Any> {
-        val args = mutableMapOf<String, Any>()
-        var lastIndentation : Int? = null
-        var lastKey : String? = null
-        val obj = mutableListOf<String>()
-
-        val list = mutableListOf<Map<String, Any>>()
-        var isList = false
-        var parentValue : String? = null
-
-        for (line in lines) {
-            val indentation = line.takeWhile { it == ' ' }.length
-
-            if (line.trim().startsWith('-')) {
-                if (!isList) {
-                    lastIndentation = indentation
-                    isList = true
-                } else {
-                    if (indentation == lastIndentation) {
-                        list.add(parseBlock(obj, parentValue))
-                        obj.clear()
-                    } else {
-                        if (parentValue == null) {
-                            parentValue = obj.last().toString().removeSuffix(":").trim()
-                        }
-                        obj.add(line)
-                    }
-                }
-                continue
-            }
-
-            val parts = line.split(":")
-
-            if (parts.size == 2) {
-                val key = parts[0].trim()
-                val value = parts[1].trim()
-
-                if (lastIndentation == null) {
-                    lastIndentation = indentation
-                }
-
-                if (indentation > lastIndentation) {
-                    obj.add(line)
-                } else {
-                    if (obj.isNotEmpty()) {
-                        if (isList) {
-                            list.add(parseBlock(obj, parentValue))
-                            obj.clear()
-                            isList = false
-                        } else {
-                            args[lastKey!!] = parseBlock(obj, parentValue)
-                            obj.clear()
-                        }
-                    }
-                    args[key] = value
-                    lastKey = key
-                    lastIndentation = indentation
-                }
-
-            } else if (line.isNotBlank()) {
-                throw IllegalArgumentException("Missing properties for ${type.simpleName}")
-            }
-        }
-
-        if (obj.isNotEmpty()) {
-            if (isList) {
-                list.add(parseBlock(obj, parentValue))
-            } else {
-                args[lastKey!!] = parseBlock(obj, parentValue)
-            }
-        }
-
-        if (list.isNotEmpty()) {
-            args[parent!!] = list
-        }
-
-        return args
+    final override fun parseList(yaml: Reader): List<T> {
+        val simpleType = type.isSimpleType()
+        val parser = listParser(yaml)
+        return if (simpleType) {
+            parser.map { parseSimpleValue(it as String, type) as T}
+        } else parser.map { newInstance(it as Map<String, Any>) }
     }
 
     private fun KClass<*>.isSimpleType() = this in setOf(String::class, Int::class, Long::class,
@@ -201,78 +136,39 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
             else -> value
         }
     }
-
-    final override fun parseSequence(yaml: Reader): Sequence<T> {
-        return object : Sequence<T> {
-            override fun iterator() = object : Iterator<T> {
-                var lastIndentation: Int? = null
-                val lines = mutableListOf<List<String>>()
-                var elem = 0
+    final override fun parseSequence(yaml: Reader) :Sequence<T> {
+        return sequence {
+            BufferedReader(yaml).use { reader ->
                 val simpleType = type.isSimpleType()
+                val objLines = mutableListOf<String>()
+                var lastIndentation: Int? = null
 
-                init {
-                    divideLines()
-                    if (lastIndentation == null && !simpleType) {
-                        throw IllegalArgumentException("YAML content is not a list")
-                    }
-                }
+                for (line in reader.lines()) {
+                    if (line.isBlank()) continue
 
-                override fun hasNext() = lines.size > elem
+                    val indentation = line.takeWhile { it == ' ' }.length
 
-                override fun next(): T {
-                    if (!hasNext()) {
-                        throw NoSuchElementException()
-                    }
-                    val item = processNext(lines[elem])
-                    elem++
-                    return item
-                }
-
-                private fun divideLines() {
-                    val reader = BufferedReader(yaml)
                     if (simpleType) {
-                        val data = reader.readText()
-                        val lines = data.split("-").map { it.trim() }.filter { it.isNotBlank() }
-                        this.lines.addAll(lines.map { listOf(it) })
-                        return
+                        val value = line.split('-').map { it.trim() }.filter { it.isNotBlank() }
+                        yield(parseSimpleValue(value.first(), type) as T)
+                    } else if (lastIndentation == null) {
+                        lastIndentation = indentation
+                    } else if (line.trim().startsWith('-')) {
+                        if (indentation > lastIndentation) {
+                            objLines.add(line)
+                        } else {
+                            yield(parseObject(objLines.joinToString("\n").reader()))
+                            objLines.clear()
+                        }
                     } else {
-                        val obj = mutableListOf<String>()
-                        reader.forEachLine { line ->
-                            if (line.isBlank()) {
-                                return@forEachLine
-                            }
-
-                            val indentation = line.takeWhile { it == ' ' }.length
-
-                            if (line.trim().startsWith('-')) {
-                                if (lastIndentation == null) {
-                                    lastIndentation = indentation
-                                    return@forEachLine
-                                } else if (indentation == lastIndentation) {
-                                    lines.add(obj.toList())
-                                    obj.clear()
-                                    return@forEachLine
-                                }
-                            }
-
-                            obj.add(line)
-                        }
-
-                        if (obj.isNotEmpty()) {
-                            lines.add(obj.toList())
-                        }
+                        objLines.add(line)
                     }
                 }
 
-                private fun processNext(line: List<String>): T {
-                    return if (simpleType) {
-                        parseSimpleValue(line[0], type) as T
-                    } else {
-                        parseObject(line.joinToString("\n").reader())
-                    }
+                if (objLines.isNotEmpty()){
+                    yield(parseObject(objLines.joinToString("\n").reader()))
                 }
             }
         }
     }
-
 }
