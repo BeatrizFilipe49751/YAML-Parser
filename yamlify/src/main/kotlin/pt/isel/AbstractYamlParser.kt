@@ -1,6 +1,7 @@
 package pt.isel
 
 import java.io.BufferedReader
+import java.io.File
 import java.io.Reader
 import kotlin.reflect.KClass
 
@@ -170,5 +171,35 @@ abstract class AbstractYamlParser<T : Any>(private val type: KClass<T>) : YamlPa
                 }
             }
         }
+    }
+
+    fun parseFolderEager(path :String) :List<T> {
+        val filesList = openDirectory(path)
+        val result = mutableListOf<T>()
+        for (file in filesList) {
+            result.add(parseObject(file.reader()))
+        }
+        return result
+    }
+
+    fun parseFolderLazy(path :String) :Sequence<T> {
+        val filesList = openDirectory(path)
+        return sequence {
+            for (file in filesList) {
+                yield(parseObject(file.reader()))
+            }
+        }
+    }
+
+    private fun openDirectory(path: String) :List<File> {
+        val dir = File(path)
+        if (!dir.exists() || !dir.isDirectory)
+            throw IllegalArgumentException("The path $path is not a directory or does not exist")
+        val filesList = dir.listFiles()
+
+        if (filesList == null || filesList.isEmpty())
+            throw IllegalArgumentException("The directory $path is empty or an error occurred")
+
+        return filesList.toList()
     }
 }

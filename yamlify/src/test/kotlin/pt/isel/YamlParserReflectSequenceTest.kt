@@ -1,22 +1,11 @@
 package pt.isel
 
+import pt.isel.test.TestItem
+import pt.isel.test.parseCount
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-
-private var parseCount = 0
-
-data class TestItem(
-    @YamlConvert(StringParser::class) val item: String
-)
-
-class StringParser : YamlPropertyParser<String> {
-    override fun parse(value: String): String {
-        parseCount++
-        return value
-    }
-}
 
 class YamlParserReflectSequenceTest {
 
