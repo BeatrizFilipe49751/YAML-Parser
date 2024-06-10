@@ -26,4 +26,8 @@ class YamlSavingsAccountParser : YamlParser<SavingsAccount> {
     override fun parseList(yaml: Reader): List<SavingsAccount> {
         TODO("Not yet implemented")
     }
+
+    override fun parseSequence(yaml: Reader): Sequence<SavingsAccount> {
+        TODO("Not yet implemented")
+    }
 }

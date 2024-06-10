@@ -18,6 +18,12 @@ class BenchTest {
             .parseObject(yamlSavingsAccount.reader())
         assertAccount(acc)
     }
+    @Test
+    fun checkYamlAccountCojen() {
+        val acc = YamlParserCojen.yamlParser(SavingsAccount::class)
+            .parseObject(yamlSavingsAccount.reader())
+        assertAccount(acc)
+    }
     private fun assertAccount(acc: SavingsAccount) {
         assertEquals(123.toShort(), acc.accountCode)
         assertEquals("John Doe", acc.holderName)
@@ -35,6 +41,13 @@ class BenchTest {
     @Test
     fun checkYamlStudentReflect() {
         val std = YamlParserReflect
+            .yamlParser(Student::class)
+            .parseObject(yamlStudent.reader())
+        assertStudent(std)
+    }
+    @Test
+    fun checkYamlStudentCojen() {
+        val std = YamlParserCojen
             .yamlParser(Student::class)
             .parseObject(yamlStudent.reader())
         assertStudent(std)
